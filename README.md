@@ -61,6 +61,33 @@ The controller uses `--hf-repo` to download GGUF models, which current
 install, stop there and capture the output of `lsb_release -a` and
 `nvidia-smi` rather than installing a Linux NVIDIA driver.
 
+### Reach the controller from the LAN
+
+Keep `llama-server` private to WSL; expose only the controller's inference
+port (9292) and, when needed, its administration port (9293). First verify it
+locally in WSL:
+
+```bash
+curl -i http://127.0.0.1:9292/
+```
+
+Then open an **Administrator PowerShell** on the Windows LAN box. Replace
+`DEV_MACHINE_IP` with the dev machine's LAN IP address:
+
+```powershell
+$wslIp = (wsl.exe hostname -I).Trim().Split(' ')[0]
+
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=9292 connectaddress=$wslIp connectport=9292
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=9293 connectaddress=$wslIp connectport=9293
+
+New-NetFirewallRule -DisplayName "LAN model inference" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9292 -RemoteAddress DEV_MACHINE_IP -Profile Private
+New-NetFirewallRule -DisplayName "LAN model admin" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9293 -RemoteAddress DEV_MACHINE_IP -Profile Private
+```
+
+Port 9293 can add models: never allow it from `Any` or `LocalSubnet`. WSL2's
+NAT address can change after a restart; rerun the two `netsh` commands if the
+controller becomes unreachable.
+
 For a batch run that must unload immediately rather than wait for the TTL:
 
 ```bash
