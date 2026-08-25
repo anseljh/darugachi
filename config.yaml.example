@@ -1,24 +1,6 @@
-# Copy to config.yaml. With the default group, the 8 GB GPU runs one model at a time.
+# Copy to config.yaml. Model definitions are created by run.sh or the admin API.
 apiKeys:
   - ${env.API_KEY}
 
 ttl: 300
 unloadTimeout: 20
-
-models:
-  llama-reranker:
-    cmd: >-
-      ${env.LLAMA_SERVER} --host 127.0.0.1 --port ${PORT}
-      --hf-repo ${env.LLAMA_HF_REPO} --hf-token ${env.HF_TOKEN}
-      --reranking --n-gpu-layers all
-    capabilities:
-      reranker: true
-
-  vllm-embed:
-    cmdStop: docker stop lan-vllm-embed
-    cmd: >-
-      docker run --init --rm --name lan-vllm-embed --gpus all
-      -e HF_TOKEN=${env.HF_TOKEN}
-      -v ${env.HF_HOME}:/root/.cache/huggingface
-      -p ${PORT}:8000 ${env.VLLM_IMAGE}
-      --model ${env.VLLM_MODEL} --served-model-name vllm-embed --runner pooling

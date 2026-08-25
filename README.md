@@ -31,7 +31,7 @@ clones do not have this problem.
 1. Install a current Windows NVIDIA driver. In WSL, `nvidia-smi` must work. Do **not** install a Linux NVIDIA driver.
 2. Install [Docker Desktop with WSL integration](https://docs.docker.com/desktop/features/wsl/) (or Docker Engine in WSL). `docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi` must work. Add your Linux user to the `docker` group if needed.
 3. Build or install [llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server) in WSL, then set its absolute Linux path in `.env`. The existing LAN llama.cpp build is fine.
-4. Create a read-only Hugging Face token and set `HF_TOKEN`. `install.sh` generates and saves long random `API_KEY` and `ADMIN_API_KEY` values in `.env`. Choose `LLAMA_HF_REPO` (a GGUF repository and quant) and `VLLM_MODEL` (a Safetensors pooling model). Both engines fetch to their persistent cache on first use.
+4. Create a read-only Hugging Face token and set `HF_TOKEN`. `install.sh` generates and saves long random `API_KEY` and `ADMIN_API_KEY` values in `.env`. `LLAMA_HF_REPO` enables the default GGUF reranker; `VLLM_MODEL` and `VLLM_IMAGE` together enable the default vLLM pooling model. Leave any of them blank to skip that default model and add models remotely instead.
 5. Make port 9292 reachable from the dev machine: use WSL mirrored networking or forward the port through Windows, and restrict Windows Firewall to the dev machine. Never expose it broadly; the API key protects requests but the LAN boundary should too.
 
 ### Build `llama-server` with CUDA
@@ -67,7 +67,7 @@ For a batch run that must unload immediately rather than wait for the TTL:
 curl -X POST -H "Authorization: Bearer $API_KEY" http://LAN-BOX:9292/api/models/unload
 ```
 
-vLLM pooling supports embedding and rerank APIs when the selected model supports them. Keep its model-specific flags in `config.yaml`; no new controller code is needed.
+vLLM pooling supports embedding and rerank APIs when the selected model supports them. The default vLLM model is registered only when both `VLLM_MODEL` and `VLLM_IMAGE` are set; otherwise add a model remotely.
 
 Nomolith's evaluated 8 GB GPU model shortlist and copy-paste `add` commands
 are in [MODELS.md](MODELS.md).

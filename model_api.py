@@ -66,7 +66,9 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authorized():
             self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             return
-        models = sorted(path.stem for path in self.server.models_dir.glob("*.yaml"))
+        models = sorted(
+            path.stem for path in self.server.models_dir.glob("*.yaml") if not path.name.startswith("_")
+        )
         self._reply(HTTPStatus.OK, {"models": models})
 
     def do_POST(self) -> None:
