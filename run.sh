@@ -18,9 +18,11 @@ set +a
 [[ -x "$LLAMA_SERVER" ]] || { echo "LLAMA_SERVER is not executable: $LLAMA_SERVER" >&2; exit 1; }
 command -v docker >/dev/null || { echo "Install Docker with WSL integration first." >&2; exit 1; }
 command -v python3 >/dev/null || { echo "Install Python 3 first." >&2; exit 1; }
-docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi >/dev/null
+echo "Checking Docker GPU access (the first run downloads a CUDA image)..."
+docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi
 
 mkdir -p "$root/models.d"
+echo "Starting controller on ports ${PORT:-9292} and ${MANAGE_PORT:-9293}..."
 python3 "$root/model_api.py" --models-dir "$root/models.d" --port "${MANAGE_PORT:-9293}" &
 api_pid=$!
 trap 'kill "$api_pid" 2>/dev/null || true' EXIT INT TERM
