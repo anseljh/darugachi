@@ -23,7 +23,8 @@ def config_for(model_id: str, engine: str, model: str) -> str:
     if engine == "llama-reranker":
         command = (
             "${env.LLAMA_SERVER} --host 127.0.0.1 --port ${PORT} "
-            f"--hf-repo {model} --hf-token ${{env.HF_TOKEN}} --reranking --n-gpu-layers all"
+            f"--hf-repo {model} --hf-token ${{env.HF_TOKEN}} "
+            "--embedding --pooling rank --reranking --n-gpu-layers all"
         )
         extra = "    capabilities:\n      reranker: true\n"
     elif engine == "llama-embedding":

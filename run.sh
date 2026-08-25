@@ -52,7 +52,7 @@ fi
     cmd: >-
       ${env.LLAMA_SERVER} --host 127.0.0.1 --port ${PORT}
       --hf-repo ${env.LLAMA_HF_REPO} --hf-token ${env.HF_TOKEN}
-      --reranking --n-gpu-layers all
+      --embedding --pooling rank --reranking --n-gpu-layers all
     capabilities:
       reranker: true
 EOF
