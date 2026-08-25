@@ -34,6 +34,33 @@ clones do not have this problem.
 4. Create a read-only Hugging Face token and set `HF_TOKEN`. `install.sh` generates and saves long random `API_KEY` and `ADMIN_API_KEY` values in `.env`. Choose `LLAMA_HF_REPO` (a GGUF repository and quant) and `VLLM_MODEL` (a Safetensors pooling model). Both engines fetch to their persistent cache on first use.
 5. Make port 9292 reachable from the dev machine: use WSL mirrored networking or forward the port through Windows, and restrict Windows Firewall to the dev machine. Never expose it broadly; the API key protects requests but the LAN boundary should too.
 
+### Build `llama-server` with CUDA
+
+Build in the WSL Linux filesystem, not under `/mnt/e`:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake git nvidia-cuda-toolkit
+mkdir -p "$HOME/src"
+git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$HOME/src/llama.cpp"
+cmake -S "$HOME/src/llama.cpp" -B "$HOME/src/llama.cpp/build" \
+  -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build "$HOME/src/llama.cpp/build" --target llama-server --config Release -j 2
+"$HOME/src/llama.cpp/build/bin/llama-server" --list-devices
+```
+
+The last command must list the NVIDIA GPU. Then set this in `.env` (replace
+the example value):
+
+```bash
+LLAMA_SERVER=$HOME/src/llama.cpp/build/bin/llama-server
+```
+
+The controller uses `--hf-repo` to download GGUF models, which current
+`llama-server` supports. If `nvcc` is still unavailable after the package
+install, stop there and capture the output of `lsb_release -a` and
+`nvidia-smi` rather than installing a Linux NVIDIA driver.
+
 For a batch run that must unload immediately rather than wait for the TTL:
 
 ```bash
