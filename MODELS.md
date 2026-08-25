@@ -1,0 +1,70 @@
+# Nomolith-evaluated models
+
+These model definitions are suitable for the LAN box's 8 GB RTX 3050. Add
+several definitions, but load only one model at a time.
+
+Set the controller administration key on the dev machine:
+
+```bash
+export LAN_MODEL_ADMIN_API_KEY='admin key from the LAN box .env'
+```
+
+## Add first
+
+These rerankers were evaluated through Nomolith's prior llama.cpp LAN route on
+this GPU. `zerank-1` has the best measured result; `zerank-1-small` is the
+faster, smaller option.
+
+| ID | Nomolith nDCG@10 | Median run time |
+| --- | ---: | ---: |
+| `zerank-1-small` | 0.740 | 17.9 s |
+| `zerank-1` | 0.763 | 47.0 s |
+| `zerank-2` | 0.760 | 29.6 s |
+
+```bash
+uv run python scripts/lan_model_controller.py add \
+  zerank-1-small llama-reranker seamon67/Zerank-1-Small-GGUF:Q8_0
+uv run python scripts/lan_model_controller.py add \
+  zerank-1 llama-reranker seamon67/Zerank-1-GGUF:Q8_0
+uv run python scripts/lan_model_controller.py add \
+  zerank-2 llama-reranker seamon67/Zerank-2-GGUF:Q8_0
+
+uv run python scripts/lan_model_controller.py add \
+  qwen3-embed-4b llama-embedding Qwen/Qwen3-Embedding-4B-GGUF:Q4_K_M
+```
+
+`qwen3-embed-4b` was evaluated in Nomolith's hosted embedding run. Its Q4
+GGUF is about 2.5 GB, so it is the local embedding starting point. See the
+[official model files](https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF/tree/main).
+
+## Add after the first smoke test
+
+```bash
+uv run python scripts/lan_model_controller.py add \
+  qwen3-embed-8b llama-embedding Qwen/Qwen3-Embedding-8B-GGUF:Q4_K_M
+```
+
+`qwen3-embed-8b` was Nomolith's highest-scoring evaluated embedding model
+(nDCG@10 0.877). Its Q4 GGUF is about 4.68 GB, so it is plausible but
+borderline on an 8 GB card; load it alone and verify an embedding request.
+See the [official model files](https://huggingface.co/Qwen/Qwen3-Embedding-8B-GGUF).
+
+The previously evaluated `giladgd/Qwen3-Reranker-4B-GGUF:Q8_0` and
+`giladgd/Qwen3-Reranker-8B-GGUF:Q5_K_M` were also served on the LAN box, but
+the Zerank models above are the better starting set.
+
+## Not supported by the generic controller yet
+
+- Voyage 4 Nano's evaluated GGUF needs a post-embedding projection that this
+  controller does not apply.
+- `nvidia/Nemotron-3-Embed-1B-BF16` scored 0.849, but correct use requires
+  separate `query` and `passage` input prefixes and NVIDIA's specified vLLM
+  version.
+- `nvidia/llama-nemotron-rerank-1b-v2` needs vLLM remote code and NVIDIA's
+  score template. The generic `vllm-pooling` definition supplies neither; see
+  its [model card](https://huggingface.co/nvidia/llama-nemotron-rerank-1b-v2).
+
+After adding a definition, the first inference downloads it. Run
+`uv run python scripts/lan_model_controller.py list` to inspect definitions;
+run `uv run python scripts/lan_model_controller.py unload ID` after an
+evaluation to release the GPU.

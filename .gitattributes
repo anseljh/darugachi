@@ -1,0 +1,3 @@
+# WSL executes these files directly; never check them out with CRLF.
+*.sh text eol=lf
+*.py text eol=lf

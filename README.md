@@ -14,6 +14,17 @@ cd lan-model-server
 ./run.sh
 ```
 
+If an existing checkout on a mounted Windows drive reports `bash\r: No such
+file or directory`, normalize its scripts once, then retry:
+
+```bash
+sed -i 's/\r$//' install.sh run.sh
+./install.sh
+```
+
+`.gitattributes` pins shell and Python scripts to LF so fresh clones do not
+have this problem.
+
 ## Manual setup
 
 1. Install a current Windows NVIDIA driver. In WSL, `nvidia-smi` must work. Do **not** install a Linux NVIDIA driver.
@@ -29,6 +40,9 @@ curl -X POST -H "Authorization: Bearer $API_KEY" http://LAN-BOX:9292/api/models/
 ```
 
 vLLM pooling supports embedding and rerank APIs when the selected model supports them. Keep its model-specific flags in `config.yaml`; no new controller code is needed.
+
+Nomolith's evaluated 8 GB GPU model shortlist and copy-paste `add` commands
+are in [MODELS.md](MODELS.md).
 
 ## Add a model remotely
 
