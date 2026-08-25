@@ -33,7 +33,8 @@ trap 'rm -rf "$tmp"' EXIT
 curl -fL "$asset_url" -o "$tmp/$asset_name"
 curl -fL "$checksums_url" -o "$tmp/checksums.txt"
 (cd "$tmp" && grep -F " $asset_name" checksums.txt | sha256sum -c -)
-tar -xzf "$tmp/$asset_name" -C "$bin" llama-swap
+# /mnt/<drive> is a Windows filesystem: it cannot restore tar timestamps.
+tar -xmzf "$tmp/$asset_name" -C "$bin" llama-swap
 chmod +x "$bin/llama-swap"
 
 [[ -f "$root/.env" ]] || cp "$root/.env.example" "$root/.env"
