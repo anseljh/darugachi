@@ -22,8 +22,3 @@ models:
       -v ${env.HF_HOME}:/root/.cache/huggingface
       -p ${PORT}:8000 ${env.VLLM_IMAGE}
       --model ${env.VLLM_MODEL} --served-model-name vllm-embed --runner pooling
-groups:
-  gpu:
-    members: [llama-reranker, vllm-embed]
-    swap: true
-    exclusive: true

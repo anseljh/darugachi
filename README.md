@@ -19,7 +19,7 @@ cd lan-model-server
 1. Install a current Windows NVIDIA driver. In WSL, `nvidia-smi` must work. Do **not** install a Linux NVIDIA driver.
 2. Install [Docker Desktop with WSL integration](https://docs.docker.com/desktop/features/wsl/) (or Docker Engine in WSL). `docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi` must work. Add your Linux user to the `docker` group if needed.
 3. Build or install [llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server) in WSL, then set its absolute Linux path in `.env`. The existing LAN llama.cpp build is fine.
-4. Create a read-only Hugging Face token and set `HF_TOKEN`. `install.sh` generates and saves a long random `API_KEY` in `.env`. Choose `LLAMA_HF_REPO` (a GGUF repository and quant) and `VLLM_MODEL` (a Safetensors pooling model). Both engines fetch to their persistent cache on first use.
+4. Create a read-only Hugging Face token and set `HF_TOKEN`. `install.sh` generates and saves long random `API_KEY` and `ADMIN_API_KEY` values in `.env`. Choose `LLAMA_HF_REPO` (a GGUF repository and quant) and `VLLM_MODEL` (a Safetensors pooling model). Both engines fetch to their persistent cache on first use.
 5. Make port 9292 reachable from the dev machine: use WSL mirrored networking or forward the port through Windows, and restrict Windows Firewall to the dev machine. Never expose it broadly; the API key protects requests but the LAN boundary should too.
 
 For a batch run that must unload immediately rather than wait for the TTL:
@@ -32,11 +32,14 @@ vLLM pooling supports embedding and rerank APIs when the selected model supports
 
 ## Add a model remotely
 
-llama-swap v251 can remotely load or unload an existing definition, but it does not yet have a released API for creating a definition or browsing/downloading Hugging Face models. Add a `models.<name>` stanza to `config.yaml` over SSH; `run.sh` starts llama-swap with `--watch-config`, so the new name becomes available automatically. Its first request downloads the Hugging Face model if it is missing.
+`run.sh` starts a small management API on port 9293. It writes only validated model definitions to `models.d/`; llama-swap watches that directory and makes a new model available automatically. Its first inference request downloads the Hugging Face model if missing.
 
 ```bash
-ssh LAN-BOX 'cd ~/lan-model-server && nano config.yaml'
-# Then request model: "new-model-name" at http://LAN-BOX:9292/v1/...
+export ADMIN_API_KEY='value from the LAN box .env file'
+curl -X POST http://LAN-BOX:9293/models \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"bge-reranker","engine":"llama-reranker","model":"Geofront/BGE-Reranker-v2-M3-GGUF:Q4_K_M"}'
 ```
 
-Use the existing `llama-reranker` or `vllm-embed` stanza as the template. If the new model needs a new environment variable rather than a value written directly in `config.yaml`, update `.env` and restart `./run.sh`; a running process cannot re-read its parent shell environment.
+`engine` is one of `llama-reranker`, `llama-embedding`, or `vllm-pooling`; `model` is its Hugging Face ID (with optional GGUF quant after `:`). `GET /models` lists definitions created by this API. Port 9293 is an admin interface: firewall it to the dev machine and do not use the regular inference `API_KEY` there.

@@ -1,4 +1,5 @@
 .env
 models/
+models.d/
 hf-cache/
 bin/

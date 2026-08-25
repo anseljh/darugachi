@@ -19,7 +19,7 @@ if ! command -v curl >/dev/null || ! command -v jq >/dev/null || ! command -v ta
   sudo apt-get install -y curl jq tar openssl
 fi
 
-mkdir -p "$bin" "$root/hf-cache"
+mkdir -p "$bin" "$root/hf-cache" "$root/models.d"
 release=$(curl -fsSL https://api.github.com/repos/mostlygeek/llama-swap/releases/latest)
 asset_name=$(jq -r '.assets[] | select(.name | test("^llama-swap_[0-9]+_linux_amd64\\.tar\\.gz$")) | .name' <<<"$release")
 asset_url=$(jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .browser_download_url' <<<"$release")
@@ -38,11 +38,13 @@ chmod +x "$bin/llama-swap"
 
 [[ -f "$root/.env" ]] || cp "$root/.env.example" "$root/.env"
 [[ -f "$root/config.yaml" ]] || cp "$root/config.yaml.example" "$root/config.yaml"
-if ! grep -Eq '^API_KEY=.{32,}$' "$root/.env"; then
-  api_key=$(openssl rand -hex 32)
-  sed -i "s/^API_KEY=.*/API_KEY=$api_key/" "$root/.env"
-  echo "Generated API_KEY in .env."
-fi
+for key in API_KEY ADMIN_API_KEY; do
+  if ! grep -Eq "^$key=.{32,}$" "$root/.env"; then
+    value=$(openssl rand -hex 32)
+    sed -i "s/^$key=.*/$key=$value/" "$root/.env"
+    echo "Generated $key in .env."
+  fi
+done
 chmod 600 "$root/.env"
 
 echo "Installed $bin/llama-swap. Edit .env and config.yaml, then run ./run.sh."
