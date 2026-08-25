@@ -18,4 +18,4 @@ set +a
 command -v docker >/dev/null || { echo "Install Docker with WSL integration first." >&2; exit 1; }
 docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi >/dev/null
 
-exec "$root/bin/llama-swap" --config "$root/config.yaml" --listen "0.0.0.0:${PORT:-9292}"
+exec "$root/bin/llama-swap" --config "$root/config.yaml" --watch-config --listen "0.0.0.0:${PORT:-9292}"

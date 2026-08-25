@@ -10,16 +10,16 @@ Inside an Ubuntu WSL2 shell on the LAN box:
 git clone https://github.com/anseljh/lan-model-server.git
 cd lan-model-server
 ./install.sh
-# edit .env and config.yaml
+# edit .env and config.yaml; API_KEY was generated automatically
 ./run.sh
 ```
 
 ## Manual setup
 
 1. Install a current Windows NVIDIA driver. In WSL, `nvidia-smi` must work. Do **not** install a Linux NVIDIA driver.
-2. Install Docker Desktop with WSL integration (or Docker Engine in WSL). `docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi` must work. Add your Linux user to the `docker` group if needed.
-3. Build or install `llama-server` in WSL, then set its absolute Linux path in `.env`. The existing LAN llama.cpp build is fine.
-4. Create a read-only Hugging Face token and set `HF_TOKEN`; set a long random `API_KEY`. Choose `LLAMA_HF_REPO` (a GGUF repository and quant) and `VLLM_MODEL` (a Safetensors pooling model). Both engines fetch to their persistent cache on first use.
+2. Install [Docker Desktop with WSL integration](https://docs.docker.com/desktop/features/wsl/) (or Docker Engine in WSL). `docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi` must work. Add your Linux user to the `docker` group if needed.
+3. Build or install [llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server) in WSL, then set its absolute Linux path in `.env`. The existing LAN llama.cpp build is fine.
+4. Create a read-only Hugging Face token and set `HF_TOKEN`. `install.sh` generates and saves a long random `API_KEY` in `.env`. Choose `LLAMA_HF_REPO` (a GGUF repository and quant) and `VLLM_MODEL` (a Safetensors pooling model). Both engines fetch to their persistent cache on first use.
 5. Make port 9292 reachable from the dev machine: use WSL mirrored networking or forward the port through Windows, and restrict Windows Firewall to the dev machine. Never expose it broadly; the API key protects requests but the LAN boundary should too.
 
 For a batch run that must unload immediately rather than wait for the TTL:
@@ -29,3 +29,14 @@ curl -X POST -H "Authorization: Bearer $API_KEY" http://LAN-BOX:9292/api/models/
 ```
 
 vLLM pooling supports embedding and rerank APIs when the selected model supports them. Keep its model-specific flags in `config.yaml`; no new controller code is needed.
+
+## Add a model remotely
+
+llama-swap v251 can remotely load or unload an existing definition, but it does not yet have a released API for creating a definition or browsing/downloading Hugging Face models. Add a `models.<name>` stanza to `config.yaml` over SSH; `run.sh` starts llama-swap with `--watch-config`, so the new name becomes available automatically. Its first request downloads the Hugging Face model if it is missing.
+
+```bash
+ssh LAN-BOX 'cd ~/lan-model-server && nano config.yaml'
+# Then request model: "new-model-name" at http://LAN-BOX:9292/v1/...
+```
+
+Use the existing `llama-reranker` or `vllm-embed` stanza as the template. If the new model needs a new environment variable rather than a value written directly in `config.yaml`, update `.env` and restart `./run.sh`; a running process cannot re-read its parent shell environment.

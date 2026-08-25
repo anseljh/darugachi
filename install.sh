@@ -14,9 +14,9 @@ if ! command -v nvidia-smi >/dev/null; then
   exit 1
 fi
 
-if ! command -v curl >/dev/null || ! command -v jq >/dev/null || ! command -v tar >/dev/null; then
+if ! command -v curl >/dev/null || ! command -v jq >/dev/null || ! command -v tar >/dev/null || ! command -v openssl >/dev/null; then
   sudo apt-get update
-  sudo apt-get install -y curl jq tar
+  sudo apt-get install -y curl jq tar openssl
 fi
 
 mkdir -p "$bin" "$root/hf-cache"
@@ -38,5 +38,11 @@ chmod +x "$bin/llama-swap"
 
 [[ -f "$root/.env" ]] || cp "$root/.env.example" "$root/.env"
 [[ -f "$root/config.yaml" ]] || cp "$root/config.yaml.example" "$root/config.yaml"
+if ! grep -Eq '^API_KEY=.{32,}$' "$root/.env"; then
+  api_key=$(openssl rand -hex 32)
+  sed -i "s/^API_KEY=.*/API_KEY=$api_key/" "$root/.env"
+  echo "Generated API_KEY in .env."
+fi
+chmod 600 "$root/.env"
 
 echo "Installed $bin/llama-swap. Edit .env and config.yaml, then run ./run.sh."
