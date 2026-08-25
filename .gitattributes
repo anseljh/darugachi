@@ -1,3 +1,6 @@
 # WSL executes these files directly; never check them out with CRLF.
 *.sh text eol=lf
 *.py text eol=lf
+*.yaml text eol=lf
+*.yaml.example text eol=lf
+.env.example text eol=lf

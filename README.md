@@ -15,15 +15,16 @@ cd lan-model-server
 ```
 
 If an existing checkout on a mounted Windows drive reports `bash\r: No such
-file or directory`, normalize its scripts once, then retry:
+file or directory` or `.env: ... $'\r': command not found`, normalize its
+scripts and generated configuration once, then retry:
 
 ```bash
-sed -i 's/\r$//' install.sh run.sh
+sed -i 's/\r$//' install.sh run.sh .env config.yaml
 ./install.sh
 ```
 
-`.gitattributes` pins shell and Python scripts to LF so fresh clones do not
-have this problem.
+`.gitattributes` pins scripts and generated-config templates to LF so fresh
+clones do not have this problem.
 
 ## Manual setup
 
