@@ -109,6 +109,25 @@ class Handler(BaseHTTPRequestHandler):
         temp.replace(path)
         self._reply(HTTPStatus.CREATED, {"id": model_id, "status": "configured"})
 
+    def do_DELETE(self) -> None:
+        prefix = "/models/"
+        if not self.path.startswith(prefix):
+            self._reply(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return
+        if not self._authorized():
+            self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
+            return
+        model_id = self.path[len(prefix):]
+        if not MODEL_ID.fullmatch(model_id):
+            self._reply(HTTPStatus.BAD_REQUEST, {"error": "invalid id"})
+            return
+        path = self.server.models_dir / f"{model_id}.yaml"
+        if not path.exists():
+            self._reply(HTTPStatus.NOT_FOUND, {"error": "model not found"})
+            return
+        path.unlink()
+        self._reply(HTTPStatus.OK, {"id": model_id, "status": "deleted"})
+
     def log_message(self, *_: object) -> None:
         return
 

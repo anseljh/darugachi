@@ -111,4 +111,4 @@ curl -X POST http://LAN-BOX:9293/models \
   -d '{"id":"bge-reranker","engine":"llama-reranker","model":"Geofront/BGE-Reranker-v2-M3-GGUF:Q4_K_M"}'
 ```
 
-`engine` is one of `llama-reranker`, `llama-embedding`, or `vllm-pooling`; `model` is its Hugging Face ID (with optional GGUF quant after `:`). `GET /models` lists definitions created by this API. Port 9293 is an admin interface: firewall it to the dev machine and do not use the regular inference `API_KEY` there.
+`engine` is one of `llama-reranker`, `llama-embedding`, or `vllm-pooling`; `model` is its Hugging Face ID (with optional GGUF quant after `:`). `GET /models` lists definitions created by this API. `DELETE /models/ID` removes a definition's yaml file (llama-swap picks up the removal automatically; it does not stop a currently running instance or delete cached weights). Port 9293 is an admin interface: firewall it to the dev machine and do not use the regular inference `API_KEY` there.
