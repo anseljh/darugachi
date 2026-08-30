@@ -43,7 +43,15 @@ def config_for(model_id: str, engine: str, model: str) -> str:
             f"docker run --init --rm --name {container} --gpus all "
             "-e HF_TOKEN=${env.HF_TOKEN} -v ${env.HF_HOME}:/root/.cache/huggingface "
             f"-p ${{PORT}}:8000 ${{env.VLLM_IMAGE}} --model {model} "
-            f"--served-model-name {model_id} --runner pooling"
+            f"--served-model-name {model_id} --runner pooling "
+            # vLLM reserves this fraction of the whole CARD up front, before it
+            # loads any weights, and aborts if that much is not already free.
+            # The 0.92 default assumes a dedicated GPU. This box has ~1.4GiB held
+            # by WSL2/display, so 0.92 of 8GiB (7.36) exceeded the 6.56 free and
+            # a 596MB embedding model failed to start -- after a 45s torch import,
+            # which reads as a model problem rather than an arithmetic one.
+            # A property of the card and what else is resident, not of the model.
+            f"--gpu-memory-utilization ${{env.VLLM_GPU_MEMORY_UTILIZATION}}"
         )
         extra = f"    cmdStop: docker stop {container}\n"
     return f"models:\n  {quoted_id}:\n{extra}    cmd: {json.dumps(command)}\n"

@@ -12,6 +12,13 @@ set +a
 
 : "${API_KEY:?Set API_KEY in .env}"
 : "${ADMIN_API_KEY:?Set ADMIN_API_KEY in .env}"
+
+# Every vllm-pooling definition substitutes this, so it must always be set --
+# including when VLLM_MODEL is unset and the only vLLM models are ones the admin
+# API registered. llama-swap's ${env.X} has no default syntax: unset would
+# substitute empty and vLLM would die on a valueless flag.
+VLLM_GPU_MEMORY_UTILIZATION=${VLLM_GPU_MEMORY_UTILIZATION:-0.75}
+export VLLM_GPU_MEMORY_UTILIZATION
 command -v python3 >/dev/null || { echo "Install Python 3 first." >&2; exit 1; }
 
 mkdir -p "$root/models.d"

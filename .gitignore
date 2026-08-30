@@ -3,3 +3,5 @@ models/
 models.d/
 hf-cache/
 bin/
+__pycache__/
+*.pyc
