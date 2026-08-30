@@ -117,3 +117,30 @@ curl -X POST http://LAN-BOX:9293/models \
 ```
 
 `engine` is one of `llama-reranker`, `llama-embedding`, or `vllm-pooling`; `model` is its Hugging Face ID (with optional GGUF quant after `:`). `GET /models` lists definitions created by this API. `DELETE /models/ID` removes a definition's yaml file (llama-swap picks up the removal automatically; it does not stop a currently running instance or delete cached weights). Port 9293 is an admin interface: firewall it to the dev machine and do not use the regular inference `API_KEY` there.
+
+A first inference request downloads the model lazily, but llama-swap's health
+check has a fixed timeout that a large cold download can exceed, failing the
+request even though the download may still be progressing. `POST
+/models/ID/download` downloads end-to-end instead, registering `ID` first if
+it doesn't already exist:
+
+```bash
+curl -X POST http://LAN-BOX:9293/models/bge-reranker/download \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"engine":"llama-reranker","model":"Geofront/BGE-Reranker-v2-M3-GGUF:Q4_K_M"}'
+curl http://LAN-BOX:9293/models/bge-reranker/status -H "Authorization: Bearer $ADMIN_API_KEY"
+```
+
+The body (`engine` and `model`, same shape as `POST /models`) is only required
+the first time for a given `ID`; once it's registered, retriggering a download
+(e.g. after a `failed` status) needs no body — its existing `engine`/`model`
+are reused. Either way this runs `hf download` (for `llama-reranker`/
+`llama-embedding`, scoped to the GGUF quant via `--include`) or `docker pull`
++ `hf download` (for `vllm-pooling`) in the background and returns
+immediately. `GET /models/ID/status` reports `not_started`, `downloading`,
+`ready`, or `failed` (with a `message` on failure). Poll status until `ready`,
+then send an inference request as normal.
+
+`GET /spec` serves this API's [OpenAPI spec](openapi.yaml) as-is; unlike the
+other endpoints it needs no `Authorization` header.

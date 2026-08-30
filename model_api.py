@@ -6,7 +6,9 @@ import hmac
 import json
 import os
 import re
+import subprocess
 import tempfile
+import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,6 +17,7 @@ from pathlib import Path
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 HF_MODEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?$")
 ENGINES = {"llama-reranker", "llama-embedding", "vllm-pooling"}
+SPEC_PATH = Path(__file__).parent / "openapi.yaml"
 
 
 def config_for(model_id: str, engine: str, model: str) -> str:
@@ -60,7 +63,46 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _read_json_body(self) -> dict:
+        size = int(self.headers.get("Content-Length", "0"))
+        if not 0 < size <= 4096:
+            raise ValueError("body must be 1 to 4096 bytes")
+        return json.loads(self.rfile.read(size))
+
+    @staticmethod
+    def _validate_engine_model(engine: object, model: object) -> None:
+        if not isinstance(engine, str) or not isinstance(model, str):
+            raise ValueError("engine and model must be strings")
+        if engine not in ENGINES:
+            raise ValueError("invalid engine")
+        if not HF_MODEL.fullmatch(model):
+            raise ValueError("invalid Hugging Face model")
+
+    def _write_definition(self, model_id: str, engine: str, model: str) -> None:
+        path = self.server.models_dir / f"{model_id}.yaml"
+        with tempfile.NamedTemporaryFile("w", dir=self.server.models_dir, delete=False) as file:
+            file.write(config_for(model_id, engine, model))
+            temp = Path(file.name)
+        temp.replace(path)
+        meta_path = self.server.models_dir / f"{model_id}.meta.json"
+        meta_path.write_text(json.dumps({"engine": engine, "model": model}))
+
     def do_GET(self) -> None:
+        if self.path == "/spec":
+            try:
+                data = SPEC_PATH.read_bytes()
+            except OSError:
+                self._reply(HTTPStatus.NOT_FOUND, {"error": "spec not found"})
+                return
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/yaml")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if self.path.startswith("/models/") and self.path.endswith("/status"):
+            self._download_status()
+            return
         if self.path != "/models":
             self._reply(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
@@ -72,7 +114,24 @@ class Handler(BaseHTTPRequestHandler):
         )
         self._reply(HTTPStatus.OK, {"models": models})
 
+    def _download_status(self) -> None:
+        if not self._authorized():
+            self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
+            return
+        model_id = self.path[len("/models/"):-len("/status")]
+        if not MODEL_ID.fullmatch(model_id):
+            self._reply(HTTPStatus.BAD_REQUEST, {"error": "invalid id"})
+            return
+        if not (self.server.models_dir / f"{model_id}.yaml").exists():
+            self._reply(HTTPStatus.NOT_FOUND, {"error": "model not found"})
+            return
+        status = self.server.downloads.get(model_id, {"state": "not_started"})
+        self._reply(HTTPStatus.OK, {"id": model_id, **status})
+
     def do_POST(self) -> None:
+        if self.path.startswith("/models/") and self.path.endswith("/download"):
+            self._start_download()
+            return
         if self.path != "/models":
             self._reply(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
@@ -80,21 +139,15 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             return
         try:
-            size = int(self.headers.get("Content-Length", "0"))
-            if not 0 < size <= 4096:
-                raise ValueError("body must be 1 to 4096 bytes")
-            payload = json.loads(self.rfile.read(size))
+            payload = self._read_json_body()
             model_id = payload["id"]
             engine = payload["engine"]
             model = payload["model"]
-            if not all(isinstance(value, str) for value in (model_id, engine, model)):
-                raise ValueError("id, engine, and model must be strings")
+            if not isinstance(model_id, str):
+                raise ValueError("id must be a string")
             if not MODEL_ID.fullmatch(model_id):
                 raise ValueError("invalid id")
-            if engine not in ENGINES:
-                raise ValueError("invalid engine")
-            if not HF_MODEL.fullmatch(model):
-                raise ValueError("invalid Hugging Face model")
+            self._validate_engine_model(engine, model)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
             self._reply(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
@@ -103,11 +156,43 @@ class Handler(BaseHTTPRequestHandler):
         if path.exists():
             self._reply(HTTPStatus.CONFLICT, {"error": "model already exists"})
             return
-        with tempfile.NamedTemporaryFile("w", dir=self.server.models_dir, delete=False) as file:
-            file.write(config_for(model_id, engine, model))
-            temp = Path(file.name)
-        temp.replace(path)
+        self._write_definition(model_id, engine, model)
         self._reply(HTTPStatus.CREATED, {"id": model_id, "status": "configured"})
+
+    def _start_download(self) -> None:
+        if not self._authorized():
+            self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
+            return
+        model_id = self.path[len("/models/"):-len("/download")]
+        if not MODEL_ID.fullmatch(model_id):
+            self._reply(HTTPStatus.BAD_REQUEST, {"error": "invalid id"})
+            return
+        if self.server.downloads.get(model_id, {}).get("state") == "downloading":
+            self._reply(HTTPStatus.CONFLICT, {"error": "download already in progress"})
+            return
+
+        yaml_path = self.server.models_dir / f"{model_id}.yaml"
+        if yaml_path.exists():
+            meta = json.loads((self.server.models_dir / f"{model_id}.meta.json").read_text())
+            engine, model = meta["engine"], meta["model"]
+        else:
+            try:
+                payload = self._read_json_body()
+                engine = payload["engine"]
+                model = payload["model"]
+                self._validate_engine_model(engine, model)
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+                self._reply(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                return
+            self._write_definition(model_id, engine, model)
+
+        self.server.downloads[model_id] = {"state": "downloading"}
+        threading.Thread(
+            target=self.server.run_download,
+            args=(model_id, engine, model),
+            daemon=True,
+        ).start()
+        self._reply(HTTPStatus.ACCEPTED, {"id": model_id, "status": "downloading"})
 
     def do_DELETE(self) -> None:
         prefix = "/models/"
@@ -126,6 +211,8 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(HTTPStatus.NOT_FOUND, {"error": "model not found"})
             return
         path.unlink()
+        (self.server.models_dir / f"{model_id}.meta.json").unlink(missing_ok=True)
+        self.server.downloads.pop(model_id, None)
         self._reply(HTTPStatus.OK, {"id": model_id, "status": "deleted"})
 
     def log_message(self, *_: object) -> None:
@@ -137,6 +224,26 @@ class Server(ThreadingHTTPServer):
         super().__init__(address, Handler)
         self.models_dir = models_dir
         self.api_key = api_key
+        self.downloads: dict[str, dict] = {}
+
+    def run_download(self, model_id: str, engine: str, model: str) -> None:
+        repo, _, tag = model.partition(":")
+        try:
+            if engine == "vllm-pooling":
+                image = os.environ.get("VLLM_IMAGE", "")
+                if image:
+                    subprocess.run(["docker", "pull", image], check=True, capture_output=True, text=True)
+                subprocess.run(["hf", "download", repo], check=True, capture_output=True, text=True)
+            else:
+                command = ["hf", "download", repo]
+                if tag:
+                    command += ["--include", f"*{tag}*"]
+                subprocess.run(command, check=True, capture_output=True, text=True)
+            self.downloads[model_id] = {"state": "ready"}
+        except subprocess.CalledProcessError as error:
+            self.downloads[model_id] = {"state": "failed", "message": error.stderr[-2000:]}
+        except OSError as error:
+            self.downloads[model_id] = {"state": "failed", "message": str(error)}
 
 
 def main() -> None:

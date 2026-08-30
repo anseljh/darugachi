@@ -1,0 +1,293 @@
+openapi: 3.1.0
+info:
+  title: LAN model server — admin API
+  version: "1.0.0"
+  description: >
+    Management API for lan-model-server's model registry (model_api.py).
+    Writes validated llama-swap model definitions to models.d/ and manages
+    background downloads of their weights. Runs on port 9293 by default;
+    firewall it to the dev machine. This is separate from the OpenAI-compatible
+    inference API llama-swap serves on port 9292.
+servers:
+  - url: http://LAN-BOX:9293
+
+security:
+  - bearerAuth: []
+
+paths:
+  /spec:
+    get:
+      summary: Fetch this OpenAPI spec
+      operationId: getSpec
+      security: []
+      responses:
+        "200":
+          description: This document, served as-is from disk
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /models:
+    get:
+      summary: List model definitions
+      operationId: listModels
+      responses:
+        "200":
+          description: Model ids currently defined in models.d/
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [models]
+                properties:
+                  models:
+                    type: array
+                    items:
+                      type: string
+              example:
+                models: ["hello-reranker", "qwen3-embed-8b-Q4_K_M"]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Add a model definition
+      operationId: createModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateModelRequest"
+            example:
+              id: bge-reranker
+              engine: llama-reranker
+              model: "Geofront/BGE-Reranker-v2-M3-GGUF:Q4_K_M"
+      responses:
+        "201":
+          description: Definition written to models.d/
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelStatusResponse"
+              example:
+                id: bge-reranker
+                status: configured
+        "400":
+          description: Invalid id, engine, model, or body size
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: A definition with this id already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /models/{id}:
+    delete:
+      summary: Remove a model definition
+      description: >
+        Deletes the definition's yaml (and any download-status tracking).
+        llama-swap picks up the removal automatically. Does not stop a
+        currently running instance of the model or delete cached weights.
+      operationId: deleteModel
+      parameters:
+        - $ref: "#/components/parameters/ModelId"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelStatusResponse"
+              example:
+                id: bge-reranker
+                status: deleted
+        "400":
+          description: Invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /models/{id}/download:
+    post:
+      summary: Register (if new) and download a model's weights in the background
+      description: >
+        Downloads end-to-end for a given Hugging Face model id: if `id` is
+        not already registered, `engine` and `model` must be given in the
+        body and are used to create its definition first (equivalent to
+        POST /models), then the download starts; if `id` is already
+        registered, the body may be omitted and its existing engine/model
+        are reused. Either way this runs `hf download` (scoped to the GGUF
+        quant via --include for llama-reranker/llama-embedding) or
+        `docker pull` + `hf download` (for vllm-pooling) in a background
+        thread and returns immediately. Poll GET /models/{id}/status for
+        completion. A first inference request also downloads lazily, but
+        llama-swap's health-check timeout can be shorter than a large cold
+        download takes, so downloading this way avoids a spurious failed
+        request.
+      operationId: startModelDownload
+      parameters:
+        - $ref: "#/components/parameters/ModelId"
+      requestBody:
+        required: false
+        description: Required only when `id` is not already registered.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [engine, model]
+              properties:
+                engine:
+                  type: string
+                  enum: [llama-reranker, llama-embedding, vllm-pooling]
+                model:
+                  type: string
+                  description: Hugging Face repo id, optionally suffixed with `:QUANT`.
+            example:
+              engine: llama-embedding
+              model: "Qwen/Qwen3-Embedding-8B-GGUF:Q4_K_M"
+      responses:
+        "202":
+          description: Download started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelStatusResponse"
+              example:
+                id: bge-reranker
+                status: downloading
+        "400":
+          description: >
+            Invalid id, or id is not registered and the body is missing/invalid
+            engine/model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: A download for this id is already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /models/{id}/status:
+    get:
+      summary: Get a model's download status
+      operationId: getModelDownloadStatus
+      parameters:
+        - $ref: "#/components/parameters/ModelId"
+      responses:
+        "200":
+          description: Current download status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadStatus"
+              examples:
+                not_started:
+                  value: { id: bge-reranker, state: not_started }
+                downloading:
+                  value: { id: bge-reranker, state: downloading }
+                ready:
+                  value: { id: bge-reranker, state: ready }
+                failed:
+                  value:
+                    id: bge-reranker
+                    state: failed
+                    message: "hf: repository not found"
+        "400":
+          description: Invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: The `ADMIN_API_KEY` value from the box's .env file.
+
+  parameters:
+    ModelId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+
+  schemas:
+    CreateModelRequest:
+      type: object
+      required: [id, engine, model]
+      properties:
+        id:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+        engine:
+          type: string
+          enum: [llama-reranker, llama-embedding, vllm-pooling]
+        model:
+          type: string
+          description: Hugging Face repo id, optionally suffixed with `:QUANT` (e.g. GGUF quant tag).
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._/-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?$"
+    ModelStatusResponse:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [configured, deleted, downloading]
+    DownloadStatus:
+      type: object
+      required: [id, state]
+      properties:
+        id:
+          type: string
+        state:
+          type: string
+          enum: [not_started, downloading, ready, failed]
+        message:
+          type: string
+          description: Present when state is "failed"; tail of the failing command's stderr.
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Missing or incorrect bearer token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: No such model id
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
