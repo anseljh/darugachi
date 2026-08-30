@@ -51,7 +51,19 @@ def config_for(model_id: str, engine: str, model: str) -> str:
             # a 596MB embedding model failed to start -- after a 45s torch import,
             # which reads as a model problem rather than an arithmetic one.
             # A property of the card and what else is resident, not of the model.
-            f"--gpu-memory-utilization ${{env.VLLM_GPU_MEMORY_UTILIZATION}}"
+            f"--gpu-memory-utilization ${{env.VLLM_GPU_MEMORY_UTILIZATION}} "
+            # Most modern pooling models on the Hub declare their config through
+            # an auto_map on a model_type transformers does not know, so the
+            # config will not load without this even when vLLM implements the
+            # architecture itself and imports nothing from the repo. Serving a
+            # repo you deliberately named is the trust boundary this controller
+            # already has -- the admin API is bearer-authed and firewalled.
+            "--trust-remote-code "
+            # Without this vLLM sizes the KV cache from the config's position
+            # embeddings, which is 131072 for some 1B models -- far past what an
+            # 8GB card can hold, and past what the model card says the model
+            # actually supports. The cap belongs to the box, not the model.
+            f"--max-model-len ${{env.VLLM_MAX_MODEL_LEN}}"
         )
         extra = f"    cmdStop: docker stop {container}\n"
     return f"models:\n  {quoted_id}:\n{extra}    cmd: {json.dumps(command)}\n"

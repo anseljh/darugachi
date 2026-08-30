@@ -60,9 +60,21 @@ the Zerank models above are the better starting set.
 - `nvidia/Nemotron-3-Embed-1B-BF16` scored 0.849, but correct use requires
   separate `query` and `passage` input prefixes and NVIDIA's specified vLLM
   version.
-- `nvidia/llama-nemotron-rerank-1b-v2` needs vLLM remote code and NVIDIA's
-  score template. The generic `vllm-pooling` definition supplies neither; see
-  its [model card](https://huggingface.co/nvidia/llama-nemotron-rerank-1b-v2).
+- `nvidia/llama-nemotron-rerank-1b-v2` needs NVIDIA's score template -- a Jinja
+  template producing `question:... passage:...`, without which the scores are
+  simply wrong. `vllm-pooling` supplies no template and serves `/v1/embeddings`
+  rather than `/rerank`, so this needs an engine of its own. Its
+  `--trust-remote-code` requirement is now met; the template is not. See its
+  [model card](https://huggingface.co/nvidia/llama-nemotron-rerank-1b-v2).
+
+## Newly servable
+
+- `nvidia/llama-nemotron-embed-vl-1b-v2` (embedding, not the reranker above).
+  vLLM implements `LlamaNemotronVLModel` natively as an embedding model from
+  0.17.0 onward, so `vllm-pooling` can serve it now that the definition passes
+  `--trust-remote-code` and `--max-model-len`. 1.68B params, 3.36GB of BF16.
+  The endpoint applies no prompt prefixes on the plain `input` route, so a
+  client must send `query: ` / `passage: ` itself.
 
 After adding a definition, the first inference downloads it. Run
 `uv run python scripts/lan_model_controller.py list` to inspect definitions;
