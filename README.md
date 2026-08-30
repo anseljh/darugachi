@@ -40,7 +40,7 @@ Build in the WSL Linux filesystem, not under `/mnt/e`:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y build-essential cmake git nvidia-cuda-toolkit
+sudo apt-get install -y build-essential cmake git nvidia-cuda-toolkit libssl-dev
 mkdir -p "$HOME/src"
 git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$HOME/src/llama.cpp"
 cmake -S "$HOME/src/llama.cpp" -B "$HOME/src/llama.cpp/build" \
@@ -49,8 +49,13 @@ cmake --build "$HOME/src/llama.cpp/build" --target llama-server --config Release
 "$HOME/src/llama.cpp/build/bin/llama-server" --list-devices
 ```
 
-The last command must list the NVIDIA GPU. Then set this in `.env` (replace
-the example value):
+The last command must list the NVIDIA GPU. Without `libssl-dev` present before
+this build, cmake silently builds `llama-server` without TLS support: it
+starts fine but `--hf-repo` fails at model-load time with `get_repo_commit:
+error: HTTPS is not supported`. If you hit that, install `libssl-dev` and
+rebuild.
+
+Then set this in `.env` (replace the example value):
 
 ```bash
 LLAMA_SERVER=$HOME/src/llama.cpp/build/bin/llama-server
