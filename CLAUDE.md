@@ -69,11 +69,19 @@ Setup and running on the actual GPU box:
    the body can be omitted and its existing `{id}.meta.json` is reused.
    Either way it then runs `hf download` (scoped to the GGUF quant tag via
    `--include` for the two llama engines) or `docker pull` + `hf download`
-   (for `vllm-pooling`) in a background thread inside `model_api.py` itself,
-   independent of llama-swap. Poll `GET /models/{id}/status` (`not_started` /
-   `downloading` / `ready` / `failed`) until ready, then send the inference
-   request. `POST /models` still exists on its own for registering a
-   definition without immediately downloading it.
+   (for `vllm-pooling`) via `Server._run_tracked`, in a background thread
+   inside `model_api.py` itself, independent of llama-swap. `_run_tracked`
+   iterates the subprocess's merged stdout/stderr line by line — Python's
+   universal-newline text mode splits on a bare `\r` too, so a tqdm-style
+   progress bar that rewrites one line still yields one "line" per update —
+   and stores the latest line plus a timestamp in `self.downloads[model_id]`
+   after every update. `GET /models/{id}/status` reports `not_started` /
+   `downloading` / `ready` / `failed`, and while `downloading` also reports
+   that latest line as `message` plus a `seconds_since_update` computed at
+   request time, so a caller can tell a stalled download from a merely slow
+   one without needing to correlate timestamps itself. Poll until `ready`,
+   then send the inference request. `POST /models` still exists on its own
+   for registering a definition without immediately downloading it.
 5. `DELETE /models/{id}` removes the yaml and meta sidecar and clears
    in-memory download state, but does not stop a currently running instance
    or delete cached weights — cache/process cleanup is manual.

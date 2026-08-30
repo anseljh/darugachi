@@ -143,8 +143,12 @@ are reused. Either way this runs `hf download` (for `llama-reranker`/
 `llama-embedding`, scoped to the GGUF quant via `--include`) or `docker pull`
 + `hf download` (for `vllm-pooling`) in the background and returns
 immediately. `GET /models/ID/status` reports `not_started`, `downloading`,
-`ready`, or `failed` (with a `message` on failure). Poll status until `ready`,
-then send an inference request as normal.
+`ready`, or `failed` (with a `message` on failure). While `downloading`, it
+also reports `message` (the underlying command's latest progress line —
+percentage and transfer rate, as printed), `updated_at` (when that line was
+seen), and `seconds_since_update` (computed at request time — a large or
+growing value means the download has stalled, not just that it's slow). Poll
+status until `ready`, then send an inference request as normal.
 
 `GET /spec` serves this API's [OpenAPI spec](openapi.yaml) as-is; unlike the
 other endpoints it needs no `Authorization` header.

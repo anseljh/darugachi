@@ -134,7 +134,11 @@ class Handler(BaseHTTPRequestHandler):
         if not (self.server.models_dir / f"{model_id}.yaml").exists():
             self._reply(HTTPStatus.NOT_FOUND, {"error": "model not found"})
             return
-        status = self.server.downloads.get(model_id, {"state": "not_started"})
+        status = dict(self.server.downloads.get(model_id, {"state": "not_started"}))
+        updated_at = status.get("updated_at")
+        if updated_at is not None:
+            elapsed = datetime.now(timezone.utc) - datetime.fromisoformat(updated_at)
+            status["seconds_since_update"] = round(elapsed.total_seconds())
         self._reply(HTTPStatus.OK, {"id": model_id, **status})
 
     def do_POST(self) -> None:
@@ -250,18 +254,40 @@ class Server(ThreadingHTTPServer):
             if engine == "vllm-pooling":
                 image = os.environ.get("VLLM_IMAGE", "")
                 if image:
-                    subprocess.run(["docker", "pull", image], check=True, capture_output=True, text=True)
-                subprocess.run(["hf", "download", repo], check=True, capture_output=True, text=True)
+                    self._run_tracked(model_id, ["docker", "pull", image], "pulling image")
+                self._run_tracked(model_id, ["hf", "download", repo], "downloading weights")
             else:
                 command = ["hf", "download", repo]
                 if tag:
                     command += ["--include", f"*{tag}*"]
-                subprocess.run(command, check=True, capture_output=True, text=True)
+                self._run_tracked(model_id, command, "downloading weights")
             self.downloads[model_id] = {"state": "ready"}
         except subprocess.CalledProcessError as error:
-            self.downloads[model_id] = {"state": "failed", "message": error.stderr[-2000:]}
+            self.downloads[model_id] = {"state": "failed", "message": (error.stderr or "")[-2000:]}
         except OSError as error:
             self.downloads[model_id] = {"state": "failed", "message": str(error)}
+
+    def _run_tracked(self, model_id: str, command: list[str], phase: str) -> None:
+        # hf/docker progress bars rewrite their line with \r; Python's universal-newline
+        # text mode still splits on that, so iterating the pipe yields one line per update.
+        process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+        )
+        last_line = ""
+        for raw_line in process.stdout:
+            line = raw_line.strip()
+            if not line:
+                continue
+            last_line = line
+            self.downloads[model_id] = {
+                "state": "downloading",
+                "phase": phase,
+                "message": last_line,
+                "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+        returncode = process.wait()
+        if returncode != 0:
+            raise subprocess.CalledProcessError(returncode, command, output=last_line, stderr=last_line)
 
 
 def main() -> None:

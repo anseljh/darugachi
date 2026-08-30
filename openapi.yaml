@@ -200,7 +200,13 @@ paths:
                 not_started:
                   value: { id: bge-reranker, state: not_started }
                 downloading:
-                  value: { id: bge-reranker, state: downloading }
+                  value:
+                    id: bge-reranker
+                    state: downloading
+                    phase: "downloading weights"
+                    message: "model.safetensors: 34%|###| 203M/596M [00:12<00:24, 16.1MB/s]"
+                    updated_at: "2026-08-30T19:44:47+00:00"
+                    seconds_since_update: 1
                 ready:
                   value: { id: bge-reranker, state: ready }
                 failed:
@@ -268,9 +274,29 @@ components:
         state:
           type: string
           enum: [not_started, downloading, ready, failed]
+        phase:
+          type: string
+          description: >
+            Present while state is "downloading" and the download involves more
+            than one step (e.g. "pulling image" then "downloading weights" for
+            vllm-pooling).
         message:
           type: string
-          description: Present when state is "failed"; tail of the failing command's stderr.
+          description: >
+            The most recent output line from the underlying `hf download` /
+            `docker pull` process while state is "downloading" (its raw progress
+            line, e.g. including a percentage and transfer rate), or the tail of
+            its stderr when state is "failed".
+        updated_at:
+          type: string
+          format: date-time
+          description: UTC timestamp of the last progress line seen, present while state is "downloading".
+        seconds_since_update:
+          type: integer
+          description: >
+            Seconds since `updated_at`, computed at request time. A large or
+            growing value while state is "downloading" indicates the download
+            has stalled rather than merely being slow.
     Error:
       type: object
       required: [error]
