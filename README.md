@@ -108,6 +108,10 @@ are in [MODELS.md](MODELS.md).
 
 `run.sh` starts a small management API on port 9293. It writes only validated model definitions to `models.d/`; llama-swap watches that directory and makes a new model available automatically. Its first inference request downloads the Hugging Face model if missing.
 
+Every request to this API logs one line to stdout: a UTC timestamp, the HTTP
+method, the endpoint (e.g. `/models/{id}/download`), and `model=ID` (or `-`
+when the request has no associated model, or its id couldn't be determined).
+
 ```bash
 export ADMIN_API_KEY='value from the LAN box .env file'
 curl -X POST http://LAN-BOX:9293/models \

@@ -9,6 +9,7 @@ import re
 import subprocess
 import tempfile
 import threading
+from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -55,6 +56,10 @@ class Handler(BaseHTTPRequestHandler):
         header = self.headers.get("Authorization", "")
         return hmac.compare_digest(header, f"Bearer {self.server.api_key}")
 
+    def _log_request(self, endpoint: str, model_id: str | None) -> None:
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        print(f"{timestamp} {self.command} {endpoint} model={model_id or '-'}", flush=True)
+
     def _reply(self, status: HTTPStatus, body: object) -> None:
         data = json.dumps(body).encode()
         self.send_response(status)
@@ -89,6 +94,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/spec":
+            self._log_request("/spec", None)
             try:
                 data = SPEC_PATH.read_bytes()
             except OSError:
@@ -104,8 +110,10 @@ class Handler(BaseHTTPRequestHandler):
             self._download_status()
             return
         if self.path != "/models":
+            self._log_request(self.path, None)
             self._reply(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
+        self._log_request("/models", None)
         if not self._authorized():
             self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             return
@@ -115,10 +123,11 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(HTTPStatus.OK, {"models": models})
 
     def _download_status(self) -> None:
+        model_id = self.path[len("/models/"):-len("/status")]
+        self._log_request("/models/{id}/status", model_id)
         if not self._authorized():
             self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             return
-        model_id = self.path[len("/models/"):-len("/status")]
         if not MODEL_ID.fullmatch(model_id):
             self._reply(HTTPStatus.BAD_REQUEST, {"error": "invalid id"})
             return
@@ -133,11 +142,14 @@ class Handler(BaseHTTPRequestHandler):
             self._start_download()
             return
         if self.path != "/models":
+            self._log_request(self.path, None)
             self._reply(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
         if not self._authorized():
+            self._log_request("/models", None)
             self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             return
+        model_id = None
         try:
             payload = self._read_json_body()
             model_id = payload["id"]
@@ -149,8 +161,10 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("invalid id")
             self._validate_engine_model(engine, model)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            self._log_request("/models", model_id if isinstance(model_id, str) else None)
             self._reply(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
+        self._log_request("/models", model_id)
 
         path = self.server.models_dir / f"{model_id}.yaml"
         if path.exists():
@@ -160,10 +174,11 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(HTTPStatus.CREATED, {"id": model_id, "status": "configured"})
 
     def _start_download(self) -> None:
+        model_id = self.path[len("/models/"):-len("/download")]
+        self._log_request("/models/{id}/download", model_id)
         if not self._authorized():
             self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             return
-        model_id = self.path[len("/models/"):-len("/download")]
         if not MODEL_ID.fullmatch(model_id):
             self._reply(HTTPStatus.BAD_REQUEST, {"error": "invalid id"})
             return
@@ -197,12 +212,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         prefix = "/models/"
         if not self.path.startswith(prefix):
+            self._log_request(self.path, None)
             self._reply(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
+        model_id = self.path[len(prefix):]
+        self._log_request("/models/{id}", model_id)
         if not self._authorized():
             self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             return
-        model_id = self.path[len(prefix):]
         if not MODEL_ID.fullmatch(model_id):
             self._reply(HTTPStatus.BAD_REQUEST, {"error": "invalid id"})
             return
@@ -216,6 +233,7 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(HTTPStatus.OK, {"id": model_id, "status": "deleted"})
 
     def log_message(self, *_: object) -> None:
+        # Suppresses BaseHTTPRequestHandler's default access-log line; _log_request logs instead.
         return
 
 
