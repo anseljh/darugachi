@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: LAN model server — admin API
+  title: Darugachi — admin API
   version: "1.0.0"
   description: >
-    Management API for lan-model-server's model registry (model_api.py).
+    Management API for Darugachi's model registry (model_api.py).
     Writes validated llama-swap model definitions to models.d/ and manages
     background downloads of their weights. Runs on port 9293 by default;
     firewall it to the dev machine. This is separate from the OpenAI-compatible
