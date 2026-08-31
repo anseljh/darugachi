@@ -10,8 +10,8 @@ A *darugachi* was the official a Mongol khan installed in a conquered province t
 Inside an Ubuntu WSL2 shell on the tributary machine with the GPU:
 
 ```bash
-git clone https://github.com/anseljh/lan-model-server.git
-cd lan-model-server
+git clone https://github.com/anseljh/darugachi.git
+cd darugachi
 ./install.sh
 # edit .env and config.yaml; API_KEY was generated automatically
 ./run.sh
