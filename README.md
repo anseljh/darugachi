@@ -3,11 +3,11 @@
 ![A Mongol rider with an administrator, public domain](docs/500px-Mongol_Rider_with_Administrator.jpeg)
 *[Mongol Rider with Administrator](https://commons.wikimedia.org/wiki/File:Mongol_Rider_with_Administrator.jpg)*
 
-A *darughachi* was the official a Mongol khan installed in a conquered province to collect tribute on his behalf. This project is the same idea for a GPU: one WSL2 service that switches an 8 GB GPU between llama.cpp and vLLM, collecting inference work from whoever controls the box. Requests use the normal OpenAI-compatible endpoint at `http://LAN-BOX:9292/v1`; the web UI is `/ui`. A model starts on its first request and unloads after five idle minutes. `POST /api/models/unload` releases everything immediately.
+A *darugachi* was the official a Mongol khan installed in a conquered province to collect tribute on his behalf. This project is the same idea for a GPU, such as one in a gaming PC a parent bought for a teenager: a WSL2 service that switches a GPU between llama.cpp and vLLM, collecting inference work from whoever controls the box. Requests use the normal OpenAI-compatible endpoint at `http://LAN-BOX:9292/v1`; the web UI is `/ui`. A model starts on its first request and unloads after five idle minutes. `POST /api/models/unload` releases everything immediately.
 
 ## Install and start
 
-Inside an Ubuntu WSL2 shell on the LAN box:
+Inside an Ubuntu WSL2 shell on the tributary machine with the GPU:
 
 ```bash
 git clone https://github.com/anseljh/lan-model-server.git
@@ -39,7 +39,7 @@ clones do not have this problem.
 
 ### Build `llama-server` with CUDA
 
-Build in the WSL Linux filesystem, not under `/mnt/e`:
+Build in the WSL Linux filesystem:
 
 ```bash
 sudo apt-get update
