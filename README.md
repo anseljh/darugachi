@@ -1,4 +1,4 @@
-# LAN model server
+# Darugachi
 
 One WSL2 service that switches the 8 GB GPU between llama.cpp and vLLM. Requests use the normal OpenAI-compatible endpoint at `http://LAN-BOX:9292/v1`; the web UI is `/ui`. A model starts on its first request and unloads after five idle minutes. `POST /api/models/unload` releases everything immediately.
 
