@@ -1,14 +1,17 @@
 # Darugachi
 
-One WSL2 service that switches the 8 GB GPU between llama.cpp and vLLM. Requests use the normal OpenAI-compatible endpoint at `http://LAN-BOX:9292/v1`; the web UI is `/ui`. A model starts on its first request and unloads after five idle minutes. `POST /api/models/unload` releases everything immediately.
+![A Mongol rider with an administrator, public domain](docs/500px-Mongol_Rider_with_Administrator.jpeg)
+*[Mongol Rider with Administrator](https://commons.wikimedia.org/wiki/File:Mongol_Rider_with_Administrator.jpg)*
+
+A *darugachi* was the official a Mongol khan installed in a conquered province to collect tribute on his behalf. This project is the same idea for a GPU, such as one in a gaming PC a parent bought for a teenager: a WSL2 service that switches a GPU between llama.cpp and vLLM, collecting inference work from whoever controls the box. Requests use the normal OpenAI-compatible endpoint at `http://LAN-BOX:9292/v1`; the web UI is `/ui`. A model starts on its first request and unloads after five idle minutes. `POST /api/models/unload` releases everything immediately.
 
 ## Install and start
 
-Inside an Ubuntu WSL2 shell on the LAN box:
+Inside an Ubuntu WSL2 shell on the tributary machine with the GPU:
 
 ```bash
-git clone https://github.com/anseljh/lan-model-server.git
-cd lan-model-server
+git clone https://github.com/anseljh/darugachi.git
+cd darugachi
 ./install.sh
 # edit .env and config.yaml; API_KEY was generated automatically
 ./run.sh
@@ -36,7 +39,7 @@ clones do not have this problem.
 
 ### Build `llama-server` with CUDA
 
-Build in the WSL Linux filesystem, not under `/mnt/e`:
+Build in the WSL Linux filesystem:
 
 ```bash
 sudo apt-get update
@@ -85,8 +88,8 @@ $wslIp = (wsl.exe hostname -I).Trim().Split(' ')[0]
 netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=9292 connectaddress=$wslIp connectport=9292
 netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=9293 connectaddress=$wslIp connectport=9293
 
-New-NetFirewallRule -DisplayName "LAN model inference" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9292 -RemoteAddress DEV_MACHINE_IP -Profile Private
-New-NetFirewallRule -DisplayName "LAN model admin" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9293 -RemoteAddress DEV_MACHINE_IP -Profile Private
+New-NetFirewallRule -DisplayName "Darugachi inference" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9292 -RemoteAddress DEV_MACHINE_IP -Profile Private
+New-NetFirewallRule -DisplayName "Darugachi admin" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9293 -RemoteAddress DEV_MACHINE_IP -Profile Private
 ```
 
 Port 9293 can add models: never allow it from `Any` or `LocalSubnet`. WSL2's
