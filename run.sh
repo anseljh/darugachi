@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cat "$root/banner.txt"
 for file in "$root/.env" "$root/config.yaml"; do
   [[ -f "$file" ]] || { echo "Missing $file; run ./install.sh first." >&2; exit 1; }
 done
