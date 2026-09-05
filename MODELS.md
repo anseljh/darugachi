@@ -55,8 +55,6 @@ the Zerank models above are the better starting set.
 
 ## Not supported by the generic controller yet
 
-- Voyage 4 Nano's evaluated GGUF needs a post-embedding projection that this
-  controller does not apply.
 - `nvidia/Nemotron-3-Embed-1B-BF16` scored 0.849, but correct use requires
   separate `query` and `passage` input prefixes and NVIDIA's specified vLLM
   version.
@@ -69,6 +67,10 @@ the Zerank models above are the better starting set.
 
 ## Newly servable
 
+- `voyageai/voyage-4-nano`. Its `vllm-pooling` definition selects vLLM's
+  native bidirectional Voyage architecture, mean pooling, BF16, and the embed
+  conversion path. The endpoint returns the finished 2048-dimensional vector;
+  clients still supply the query/document prompt.
 - `nvidia/llama-nemotron-embed-vl-1b-v2` (embedding, not the reranker above).
   vLLM implements `LlamaNemotronVLModel` natively as an embedding model from
   0.17.0 onward, so `vllm-pooling` can serve it now that the definition passes
