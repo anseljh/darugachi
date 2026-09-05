@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import re
+import shlex
 import subprocess
 import tempfile
 import threading
@@ -21,39 +22,32 @@ ENGINES = {"llama-reranker", "llama-embedding", "vllm-pooling"}
 SPEC_PATH = Path(__file__).parent / "openapi.yaml"
 
 
-def config_for(model_id: str, engine: str, model: str) -> str:
+def config_for(
+    model_id: str, engine: str, model: str, arguments: list[str] | None = None
+) -> str:
     quoted_id = json.dumps(model_id)
-    quoted_model = json.dumps(model)
+    extra_arguments = f" {shlex.join(arguments)}" if arguments else ""
     if engine == "llama-reranker":
         command = (
             "${env.LLAMA_SERVER} --host 127.0.0.1 --port ${PORT} "
             f"--hf-repo {model} --hf-token ${{env.HF_TOKEN}} "
-            "--embedding --pooling rank --reranking --n-gpu-layers all"
+            f"--embedding --pooling rank --reranking --n-gpu-layers all{extra_arguments}"
         )
         extra = "    capabilities:\n      reranker: true\n"
     elif engine == "llama-embedding":
         command = (
             "${env.LLAMA_SERVER} --host 127.0.0.1 --port ${PORT} "
-            f"--hf-repo {model} --hf-token ${{env.HF_TOKEN}} --embedding --n-gpu-layers all"
+            f"--hf-repo {model} --hf-token ${{env.HF_TOKEN}} --embedding "
+            f"--n-gpu-layers all{extra_arguments}"
         )
         extra = ""
     else:
         container = f"lan-vllm-{model_id}"
-        voyage_args = ""
-        if model == "voyageai/voyage-4-nano":
-            voyage_args = (
-                "--convert embed "
-                "--hf-overrides "
-                "'{\"architectures\":[\"VoyageQwen3BidirectionalEmbedModel\"]}' "
-                "--pooler-config '{\"pooling_type\":\"MEAN\"}' "
-                "--dtype bfloat16 --enforce-eager "
-            )
         command = (
             f"docker run --init --rm --name {container} --gpus all "
             "-e HF_TOKEN=${env.HF_TOKEN} -v ${env.HF_HOME}:/root/.cache/huggingface "
             f"-p ${{PORT}}:8000 ${{env.VLLM_IMAGE}} --model {model} "
             f"--served-model-name {model_id} --runner pooling "
-            f"{voyage_args}"
             # vLLM reserves this fraction of the whole CARD up front, before it
             # loads any weights, and aborts if that much is not already free.
             # The 0.92 default assumes a dedicated GPU. This box has ~1.4GiB held
@@ -73,7 +67,7 @@ def config_for(model_id: str, engine: str, model: str) -> str:
             # embeddings, which is 131072 for some 1B models -- far past what an
             # 8GB card can hold, and past what the model card says the model
             # actually supports. The cap belongs to the box, not the model.
-            f"--max-model-len ${{env.VLLM_MAX_MODEL_LEN}}"
+            f"--max-model-len ${{env.VLLM_MAX_MODEL_LEN}}{extra_arguments}"
         )
         extra = f"    cmdStop: docker stop {container}\n"
     return f"models:\n  {quoted_id}:\n{extra}    cmd: {json.dumps(command)}\n"
@@ -105,7 +99,9 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(size))
 
     @staticmethod
-    def _validate_engine_model(engine: object, model: object) -> None:
+    def _validate_engine_model(
+        engine: object, model: object, arguments: object
+    ) -> None:
         if not isinstance(engine, str) or not isinstance(model, str):
             raise ValueError("engine and model must be strings")
         if engine not in ENGINES:
@@ -113,14 +109,28 @@ class Handler(BaseHTTPRequestHandler):
         if not HF_MODEL.fullmatch(model):
             raise ValueError("invalid Hugging Face model")
 
-    def _write_definition(self, model_id: str, engine: str, model: str) -> None:
+        if not isinstance(arguments, list) or len(arguments) > 64:
+            raise ValueError("arguments must be an array of at most 64 strings")
+        if any(
+            not isinstance(argument, str)
+            or len(argument) > 512
+            or "\0" in argument
+            for argument in arguments
+        ):
+            raise ValueError("arguments must contain strings of at most 512 characters")
+
+    def _write_definition(
+        self, model_id: str, engine: str, model: str, arguments: list[str]
+    ) -> None:
         path = self.server.models_dir / f"{model_id}.yaml"
         with tempfile.NamedTemporaryFile("w", dir=self.server.models_dir, delete=False) as file:
-            file.write(config_for(model_id, engine, model))
+            file.write(config_for(model_id, engine, model, arguments))
             temp = Path(file.name)
         temp.replace(path)
         meta_path = self.server.models_dir / f"{model_id}.meta.json"
-        meta_path.write_text(json.dumps({"engine": engine, "model": model}))
+        meta_path.write_text(
+            json.dumps({"engine": engine, "model": model, "arguments": arguments})
+        )
 
     def do_GET(self) -> None:
         if self.path == "/spec":
@@ -189,11 +199,12 @@ class Handler(BaseHTTPRequestHandler):
             model_id = payload["id"]
             engine = payload["engine"]
             model = payload["model"]
+            arguments = payload.get("arguments", [])
             if not isinstance(model_id, str):
                 raise ValueError("id must be a string")
             if not MODEL_ID.fullmatch(model_id):
                 raise ValueError("invalid id")
-            self._validate_engine_model(engine, model)
+            self._validate_engine_model(engine, model, arguments)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
             self._log_request("/models", model_id if isinstance(model_id, str) else None)
             self._reply(HTTPStatus.BAD_REQUEST, {"error": str(error)})
@@ -204,7 +215,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.exists():
             self._reply(HTTPStatus.CONFLICT, {"error": "model already exists"})
             return
-        self._write_definition(model_id, engine, model)
+        self._write_definition(model_id, engine, model, arguments)
         self._reply(HTTPStatus.CREATED, {"id": model_id, "status": "configured"})
 
     def _start_download(self) -> None:
@@ -229,11 +240,12 @@ class Handler(BaseHTTPRequestHandler):
                 payload = self._read_json_body()
                 engine = payload["engine"]
                 model = payload["model"]
-                self._validate_engine_model(engine, model)
+                arguments = payload.get("arguments", [])
+                self._validate_engine_model(engine, model, arguments)
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
                 self._reply(HTTPStatus.BAD_REQUEST, {"error": str(error)})
                 return
-            self._write_definition(model_id, engine, model)
+            self._write_definition(model_id, engine, model, arguments)
 
         self.server.downloads[model_id] = {"state": "downloading"}
         threading.Thread(

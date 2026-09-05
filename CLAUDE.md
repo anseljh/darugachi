@@ -51,7 +51,8 @@ Setup and running on the actual GPU box:
    `model` and writes `models.d/{id}.yaml` — a `config_for()`-generated
    llama-swap model block whose `cmd` template still contains unresolved
    `${env.X}` / `${PORT}` placeholders. It also writes a `{id}.meta.json`
-   sidecar (engine + model) alongside, used only by the download endpoints.
+   sidecar (engine + model + additional command arguments) alongside, used by
+   the download endpoints.
 2. llama-swap polls `models.d/` (2s interval) and reloads automatically —
    `model_api.py` never talks to llama-swap directly.
 3. The actual model process (llama-server or a `docker run` of vLLM) only

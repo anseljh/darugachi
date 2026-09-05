@@ -121,10 +121,15 @@ export ADMIN_API_KEY='value from the LAN box .env file'
 curl -X POST http://LAN-BOX:9293/models \
   -H "Authorization: Bearer $ADMIN_API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"id":"bge-reranker","engine":"llama-reranker","model":"Geofront/BGE-Reranker-v2-M3-GGUF:Q4_K_M"}'
+  -d '{"id":"bge-reranker","engine":"llama-reranker","model":"Geofront/BGE-Reranker-v2-M3-GGUF:Q4_K_M","arguments":["--ctx-size","8192"]}'
 ```
 
 `engine` is one of `llama-reranker`, `llama-embedding`, or `vllm-pooling`; `model` is its Hugging Face ID (with optional GGUF quant after `:`). `GET /models` lists definitions created by this API. `DELETE /models/ID` removes a definition's yaml file (llama-swap picks up the removal automatically; it does not stop a currently running instance or delete cached weights). Port 9293 is an admin interface: firewall it to the dev machine and do not use the regular inference `API_KEY` there.
+
+`arguments` is an optional array of additional command arguments. The API
+shell-quotes each item, writes it into the llama-swap definition, and persists
+the original array in the model's metadata sidecar for later downloads. Model
+flags belong here, not in controller code.
 
 A first inference request downloads the model lazily, but llama-swap's health
 check has a fixed timeout that a large cold download can exceed, failing the
@@ -140,10 +145,11 @@ curl -X POST http://LAN-BOX:9293/models/bge-reranker/download \
 curl http://LAN-BOX:9293/models/bge-reranker/status -H "Authorization: Bearer $ADMIN_API_KEY"
 ```
 
-The body (`engine` and `model`, same shape as `POST /models`) is only required
+The body (`engine`, `model`, and optional `arguments`, same shape as `POST
+/models`) is only required
 the first time for a given `ID`; once it's registered, retriggering a download
-(e.g. after a `failed` status) needs no body — its existing `engine`/`model`
-are reused. Either way this runs `hf download` (for `llama-reranker`/
+(e.g. after a `failed` status) needs no body — its existing
+`engine`/`model`/`arguments` are reused. Either way this runs `hf download` (for `llama-reranker`/
 `llama-embedding`, scoped to the GGUF quant via `--include`) or `docker pull`
 + `hf download` (for `vllm-pooling`) in the background and returns
 immediately. `GET /models/ID/status` reports `not_started`, `downloading`,

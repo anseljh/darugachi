@@ -69,8 +69,9 @@ the Zerank models above are the better starting set.
 
 - `voyageai/voyage-4-nano`. Its `vllm-pooling` definition selects vLLM's
   native bidirectional Voyage architecture, mean pooling, BF16, and the embed
-  conversion path. The endpoint returns the finished 2048-dimensional vector;
-  clients still supply the query/document prompt.
+  conversion path through its saved `arguments`. The endpoint returns the
+  finished 2048-dimensional vector; clients still supply the query/document
+  prompt.
 - `nvidia/llama-nemotron-embed-vl-1b-v2` (embedding, not the reranker above).
   vLLM implements `LlamaNemotronVLModel` natively as an embedding model from
   0.17.0 onward, so `vllm-pooling` can serve it now that the definition passes
