@@ -39,11 +39,21 @@ def config_for(model_id: str, engine: str, model: str) -> str:
         extra = ""
     else:
         container = f"lan-vllm-{model_id}"
+        voyage_args = ""
+        if model == "voyageai/voyage-4-nano":
+            voyage_args = (
+                "--convert embed "
+                "--hf-overrides "
+                "'{\"architectures\":[\"VoyageQwen3BidirectionalEmbedModel\"]}' "
+                "--pooler-config '{\"pooling_type\":\"MEAN\"}' "
+                "--dtype bfloat16 --enforce-eager "
+            )
         command = (
             f"docker run --init --rm --name {container} --gpus all "
             "-e HF_TOKEN=${env.HF_TOKEN} -v ${env.HF_HOME}:/root/.cache/huggingface "
             f"-p ${{PORT}}:8000 ${{env.VLLM_IMAGE}} --model {model} "
             f"--served-model-name {model_id} --runner pooling "
+            f"{voyage_args}"
             # vLLM reserves this fraction of the whole CARD up front, before it
             # loads any weights, and aborts if that much is not already free.
             # The 0.92 default assumes a dedicated GPU. This box has ~1.4GiB held
