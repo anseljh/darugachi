@@ -24,6 +24,8 @@ SPEC_PATH = Path(__file__).parent / "openapi.yaml"
 ROOT = Path(__file__).resolve().parent
 UPDATE_DELAY_SECONDS = 3
 SHUTDOWN_DELAY_SECONDS = 1
+MIN_STARTUP_TIMEOUT_SECONDS = 15
+MAX_STARTUP_TIMEOUT_SECONDS = 3600
 
 
 def config_for(
@@ -136,6 +138,19 @@ class Handler(BaseHTTPRequestHandler):
             json.dumps({"engine": engine, "model": model, "arguments": arguments})
         )
 
+    def _write_startup_timeout(self, seconds: object) -> None:
+        if (
+            not isinstance(seconds, int)
+            or isinstance(seconds, bool)
+            or not MIN_STARTUP_TIMEOUT_SECONDS <= seconds <= MAX_STARTUP_TIMEOUT_SECONDS
+        ):
+            raise ValueError("startup_timeout_seconds must be an integer from 15 to 3600")
+        path = self.server.models_dir / "_settings.yaml"
+        with tempfile.NamedTemporaryFile("w", dir=self.server.models_dir, delete=False) as file:
+            file.write(f"healthCheckTimeout: {seconds}\n")
+            temp = Path(file.name)
+        temp.replace(path)
+
     def do_GET(self) -> None:
         if self.path == "/spec":
             self._log_request("/spec", None)
@@ -224,6 +239,24 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._write_definition(model_id, engine, model, arguments)
         self._reply(HTTPStatus.CREATED, {"id": model_id, "status": "configured"})
+
+    def do_PUT(self) -> None:
+        if self.path != "/settings":
+            self._log_request(self.path, None)
+            self._reply(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return
+        self._log_request("/settings", None)
+        if not self._authorized():
+            self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
+            return
+        try:
+            payload = self._read_json_body()
+            seconds = payload["startup_timeout_seconds"]
+            self._write_startup_timeout(seconds)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            self._reply(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        self._reply(HTTPStatus.OK, {"startup_timeout_seconds": seconds})
 
     def _start_update(self) -> None:
         self._log_request("/self-update", None)

@@ -60,9 +60,8 @@ Setup and running on the actual GPU box:
    resolves the `${env...}` placeholders and downloads Hugging Face weights
    itself via `--hf-repo` (llama.cpp) or the mounted `HF_HOME` cache
    (vLLM) at that point.
-4. This lazy-start path has a fixed llama-swap health-check timeout that a
-   large cold download can exceed, failing the request even though the
-   download may still be progressing in the background process. `POST
+4. This lazy-start path has a llama-swap health-check timeout that a large
+   cold download or slow model initialization can exceed. `POST
    /models/{id}/download` exists to sidestep this — it's the end-to-end
    entry point: if `{id}` isn't registered yet, the request body's
    `engine`/`model` register it first (same write path as `POST /models`,
@@ -83,6 +82,10 @@ Setup and running on the actual GPU box:
    one without needing to correlate timestamps itself. Poll until `ready`,
    then send the inference request. `POST /models` still exists on its own
    for registering a definition without immediately downloading it.
+   `PUT /settings` accepts `startup_timeout_seconds` (15--3600) and persists
+   llama-swap's process-wide `healthCheckTimeout` in the watched
+   `models.d/_settings.yaml` fragment, so slow vLLM startups can be allowed
+   without model-name branches or another restart.
 5. `DELETE /models/{id}` removes the yaml and meta sidecar and clears
    in-memory download state, but does not stop a currently running instance
    or delete cached weights — cache/process cleanup is manual.

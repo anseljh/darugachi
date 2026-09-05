@@ -4,6 +4,7 @@ import signal
 import tempfile
 import threading
 import unittest
+from http import HTTPStatus
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -64,6 +65,39 @@ class ModelArgumentsTest(unittest.TestCase):
             Handler._validate_engine_model(
                 "llama-embedding", "owner/model", ["--pooling", 1]
             )
+
+
+class StartupTimeoutTest(unittest.TestCase):
+    def test_api_writes_llama_swap_setting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            handler = Handler.__new__(Handler)
+            handler.path = "/settings"
+            handler.server = SimpleNamespace(models_dir=Path(directory))
+            handler._log_request = MagicMock()
+            handler._authorized = MagicMock(return_value=True)
+            handler._read_json_body = MagicMock(
+                return_value={"startup_timeout_seconds": 300}
+            )
+            handler._reply = MagicMock()
+            handler.do_PUT()
+
+            self.assertEqual(
+                (Path(directory) / "_settings.yaml").read_text(),
+                "healthCheckTimeout: 300\n",
+            )
+            handler._reply.assert_called_once_with(
+                HTTPStatus.OK, {"startup_timeout_seconds": 300}
+            )
+
+    def test_rejects_invalid_timeout(self):
+        handler = Handler.__new__(Handler)
+        handler.server = SimpleNamespace(models_dir=Path("unused"))
+        for invalid in (True, 14, 3601, "300"):
+            with (
+                self.subTest(invalid=invalid),
+                self.assertRaisesRegex(ValueError, "startup_timeout_seconds"),
+            ):
+                handler._write_startup_timeout(invalid)
 
 
 class SelfUpdateTest(unittest.TestCase):

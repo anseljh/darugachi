@@ -131,9 +131,21 @@ shell-quotes each item, writes it into the llama-swap definition, and persists
 the original array in the model's metadata sidecar for later downloads. Model
 flags belong here, not in controller code.
 
-A first inference request downloads the model lazily, but llama-swap's health
-check has a fixed timeout that a large cold download can exceed, failing the
-request even though the download may still be progressing. `POST
+llama-swap's startup health timeout is process-wide. Raise it through the
+admin API when a slow vLLM model needs more than the 120-second default; the
+watched setting is persisted in `models.d/_settings.yaml` and applies without
+another restart:
+
+```bash
+curl -X PUT http://LAN-BOX:9293/settings \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"startup_timeout_seconds":300}'
+```
+
+A first inference request downloads the model lazily, but llama-swap's startup
+health check can expire during a large cold download or slow initialization.
+`POST
 /models/ID/download` downloads end-to-end instead, registering `ID` first if
 it doesn't already exist:
 

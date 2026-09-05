@@ -15,6 +15,39 @@ security:
   - bearerAuth: []
 
 paths:
+  /settings:
+    put:
+      summary: Update live llama-swap settings
+      description: >
+        Writes a watched configuration fragment, so llama-swap applies the
+        new process-wide model startup health-check timeout without a restart.
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [startup_timeout_seconds]
+              properties:
+                startup_timeout_seconds:
+                  type: integer
+                  minimum: 15
+                  maximum: 3600
+            example:
+              startup_timeout_seconds: 300
+      responses:
+        "200":
+          description: Setting written to models.d/_settings.yaml
+        "400":
+          description: Invalid timeout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /spec:
     get:
       summary: Fetch this OpenAPI spec
