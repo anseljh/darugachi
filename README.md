@@ -162,3 +162,16 @@ status until `ready`, then send an inference request as normal.
 
 `GET /spec` serves this API's [OpenAPI spec](openapi.yaml) as-is; unlike the
 other endpoints it needs no `Authorization` header.
+
+## Update remotely
+
+The authenticated update endpoint hands restart responsibility to a detached
+process, then stops the running controller and inference gateway. After three
+seconds the detached process pulls a fast-forward update and starts Darugachi
+again. If the pull fails, it restarts the current checkout. Output is appended
+to `/tmp/darugachi-update.log`.
+
+```bash
+curl -X POST http://LAN-BOX:9293/self-update \
+  -H "Authorization: Bearer $ADMIN_API_KEY"
+```

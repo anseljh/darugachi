@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import tempfile
 import threading
@@ -20,6 +21,9 @@ MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 HF_MODEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?$")
 ENGINES = {"llama-reranker", "llama-embedding", "vllm-pooling"}
 SPEC_PATH = Path(__file__).parent / "openapi.yaml"
+ROOT = Path(__file__).resolve().parent
+UPDATE_DELAY_SECONDS = 3
+SHUTDOWN_DELAY_SECONDS = 1
 
 
 def config_for(
@@ -182,6 +186,9 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(HTTPStatus.OK, {"id": model_id, **status})
 
     def do_POST(self) -> None:
+        if self.path == "/self-update":
+            self._start_update()
+            return
         if self.path.startswith("/models/") and self.path.endswith("/download"):
             self._start_download()
             return
@@ -217,6 +224,24 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._write_definition(model_id, engine, model, arguments)
         self._reply(HTTPStatus.CREATED, {"id": model_id, "status": "configured"})
+
+    def _start_update(self) -> None:
+        self._log_request("/self-update", None)
+        if not self._authorized():
+            self._reply(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
+            return
+        try:
+            scheduled = self.server.start_update()
+        except OSError:
+            self._reply(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "could not schedule update"})
+            return
+        if not scheduled:
+            self._reply(HTTPStatus.CONFLICT, {"error": "update already scheduled"})
+            return
+        self._reply(
+            HTTPStatus.ACCEPTED,
+            {"status": "updating", "restart_in_seconds": UPDATE_DELAY_SECONDS},
+        )
 
     def _start_download(self) -> None:
         model_id = self.path[len("/models/"):-len("/download")]
@@ -289,6 +314,43 @@ class Server(ThreadingHTTPServer):
         self.models_dir = models_dir
         self.api_key = api_key
         self.downloads: dict[str, dict] = {}
+        self.update_started = False
+        self.update_lock = threading.Lock()
+
+    def start_update(self) -> bool:
+        with self.update_lock:
+            if self.update_started:
+                return False
+            self.update_started = True
+        try:
+            log = open("/tmp/darugachi-update.log", "ab", buffering=0)
+            subprocess.Popen(
+                [
+                    "sh",
+                    "-c",
+                    'sleep "$1"; git -C "$2" pull --ff-only; exec "$2/run.sh"',
+                    "darugachi-update",
+                    str(UPDATE_DELAY_SECONDS),
+                    str(ROOT),
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        except OSError:
+            with self.update_lock:
+                self.update_started = False
+            raise
+        finally:
+            if "log" in locals():
+                log.close()
+        timer = threading.Timer(
+            SHUTDOWN_DELAY_SECONDS, os.kill, (os.getppid(), signal.SIGTERM)
+        )
+        timer.daemon = True
+        timer.start()
+        return True
 
     def run_download(self, model_id: str, engine: str, model: str) -> None:
         repo, _, tag = model.partition(":")

@@ -88,5 +88,8 @@ awk '/^models:/{exit} {print}' "$root/config.yaml" > "$runtime_config"
 echo "Starting controller on ports ${PORT:-9292} and ${MANAGE_PORT:-9293}..."
 python3 "$root/model_api.py" --models-dir "$root/models.d" --port "${MANAGE_PORT:-9293}" &
 api_pid=$!
-trap 'kill "$api_pid" 2>/dev/null || true' EXIT INT TERM
-"$root/bin/llama-swap" --config "$runtime_config" --config-dir "$root/models.d" --watch-config --listen "0.0.0.0:${PORT:-9292}"
+"$root/bin/llama-swap" --config "$runtime_config" --config-dir "$root/models.d" --watch-config --listen "0.0.0.0:${PORT:-9292}" &
+swap_pid=$!
+trap 'kill "$api_pid" "$swap_pid" 2>/dev/null || true; wait "$api_pid" "$swap_pid" 2>/dev/null || true' EXIT
+trap 'exit 0' INT TERM
+wait "$swap_pid"

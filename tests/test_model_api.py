@@ -1,10 +1,21 @@
 import json
+import os
+import signal
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
-from model_api import Handler, config_for
+from model_api import (
+    ROOT,
+    SHUTDOWN_DELAY_SECONDS,
+    UPDATE_DELAY_SECONDS,
+    Handler,
+    Server,
+    config_for,
+)
 
 
 class ModelArgumentsTest(unittest.TestCase):
@@ -53,6 +64,29 @@ class ModelArgumentsTest(unittest.TestCase):
             Handler._validate_engine_model(
                 "llama-embedding", "owner/model", ["--pooling", 1]
             )
+
+
+class SelfUpdateTest(unittest.TestCase):
+    @patch("model_api.threading.Timer")
+    @patch("model_api.subprocess.Popen")
+    def test_update_detaches_then_stops_parent(self, popen, timer_class):
+        server = Server.__new__(Server)
+        server.update_started = False
+        server.update_lock = threading.Lock()
+        timer = timer_class.return_value = MagicMock()
+
+        self.assertTrue(server.start_update())
+        self.assertFalse(server.start_update())
+
+        command = popen.call_args.args[0]
+        self.assertEqual(command[-2:], [str(UPDATE_DELAY_SECONDS), str(ROOT)])
+        self.assertIn('git -C "$2" pull --ff-only', command[2])
+        self.assertIn('exec "$2/run.sh"', command[2])
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        timer_class.assert_called_once_with(
+            SHUTDOWN_DELAY_SECONDS, os.kill, (os.getppid(), signal.SIGTERM)
+        )
+        timer.start.assert_called_once_with()
 
 
 if __name__ == "__main__":

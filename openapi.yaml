@@ -28,6 +28,45 @@ paths:
               schema:
                 type: string
 
+  /self-update:
+    post:
+      summary: Pull and restart Darugachi
+      description: >
+        Starts a detached process that waits three seconds, pulls the checkout
+        with --ff-only, and starts Darugachi. The current service stops after
+        one second. A failed pull still restarts the existing checkout. Output
+        is appended to /tmp/darugachi-update.log.
+      operationId: updateDarugachi
+      responses:
+        "202":
+          description: Update and restart scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, restart_in_seconds]
+                properties:
+                  status:
+                    type: string
+                    const: updating
+                  restart_in_seconds:
+                    type: integer
+                    const: 3
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: An update is already scheduled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: The detached updater could not be started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /models:
     get:
       summary: List model definitions
